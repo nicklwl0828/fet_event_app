@@ -1,3 +1,4 @@
+// lib/screens/create_event_screen.dart
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -37,6 +38,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _locationCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadExistingEvent() async {
     setState(() => _isLoading = true);
     try {
@@ -47,14 +56,16 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
       if (snap.exists) {
         final data = snap.data() as Map<String, dynamic>;
-        _titleCtrl.text = data['title'] ?? '';
-        _descCtrl.text = data['description'] ?? '';
-        _locationCtrl.text = data['location'] ?? '';
-        _existingImageUrl = data['image_url'];
+        _titleCtrl.text = (data['title'] ?? '') as String;
+        _descCtrl.text = (data['description'] ?? '') as String;
+        _locationCtrl.text = (data['location'] ?? '') as String;
+        _existingImageUrl = (data['image_url'] ?? '') as String;
 
-        final ts = data['starts_at'] as Timestamp?;
-        if (ts != null) {
+        final ts = data['starts_at'];
+        if (ts is Timestamp) {
           _startsAt = ts.toDate();
+        } else if (ts is DateTime) {
+          _startsAt = ts;
         }
       }
     } catch (e) {
@@ -86,10 +97,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return _existingImageUrl;
     }
 
-    final ref = FirebaseStorage.instance
-        .ref()
-        .child('event_photos')
-        .child('$eventId.jpg');
+    final ref = FirebaseStorage.instance.ref().child('event_photos').child('$eventId.jpg');
 
     debugPrint('📤 Uploading image to: ${ref.fullPath}');
 
@@ -104,36 +112,19 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
 
       // 1) Upload bytes with metadata
-      final taskSnapshot = await ref.putData(
-        _pickedImageBytes!,
-        metadata,
-      );
+      final taskSnapshot = await ref.putData(_pickedImageBytes!, metadata);
 
       debugPrint('✅ Upload complete. State: ${taskSnapshot.state}');
 
       // 2) Get download URL
-      try {
-        final url = await taskSnapshot.ref.getDownloadURL();
-        debugPrint('🔗 Download URL: $url');
-        return url;
-      } on FirebaseException catch (e) {
-        debugPrint('⚠️ getDownloadURL failed for ${ref.fullPath}: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Image uploaded but URL fetch failed: ${e.message}'),
-            ),
-          );
-        }
-        return _existingImageUrl;
-      }
+      final url = await taskSnapshot.ref.getDownloadURL();
+      debugPrint('🔗 Download URL: $url');
+      return url;
     } on FirebaseException catch (e) {
       debugPrint('❌ Upload failed for ${ref.fullPath}: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Image upload failed: ${e.message}'),
-          ),
+          SnackBar(content: Text('Image upload failed: ${e.message}')),
         );
       }
       return _existingImageUrl;
@@ -165,13 +156,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     if (time == null) return;
 
     setState(() {
-      _startsAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
+      _startsAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
   }
 
@@ -191,9 +176,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Not logged in.')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Not logged in.')),
+          );
+        }
         return;
       }
 
@@ -201,21 +188,37 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final String eventId = widget.eventId ?? eventsRef.doc().id;
       final docRef = eventsRef.doc(eventId);
 
-      // 1️⃣ Upload image first (if any) — now with metadata
+      // If editing and a new image is selected, try to remove old image from storage
+      final willReplaceImage = _pickedImageBytes != null && _existingImageUrl != null && _existingImageUrl!.isNotEmpty;
+      if (willReplaceImage) {
+        try {
+          final oldRef = FirebaseStorage.instance.refFromURL(_existingImageUrl!);
+          await oldRef.delete();
+          debugPrint('Old image deleted: ${oldRef.fullPath}');
+        } catch (e) {
+          debugPrint('Failed to delete old image (non-fatal): $e');
+          // continue — not fatal
+        }
+      }
+
+      // 1️⃣ Upload image first (if any)
       final imageUrl = await _uploadImage(eventId);
 
-      // 2️⃣ Build event data
+      // 2️⃣ Build event data (use Timestamp for Firestore)
       final data = {
         'title': _titleCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'location': _locationCtrl.text.trim(),
-        'starts_at': _startsAt,
+        'starts_at': Timestamp.fromDate(_startsAt!),
         'image_url': imageUrl ?? '',
         'created_by': user.uid,
+        'updated_at': FieldValue.serverTimestamp(),
       };
 
       // 3️⃣ Save / update
       if (widget.eventId == null) {
+        // new doc - add created_at as well
+        data['created_at'] = FieldValue.serverTimestamp();
         await docRef.set(data);
       } else {
         await docRef.update(data);
@@ -225,19 +228,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
       Navigator.pop(context, eventId);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.eventId == null
-                ? 'Event created successfully'
-                : 'Event updated successfully',
-          ),
-        ),
+        SnackBar(content: Text(widget.eventId == null ? 'Event created successfully' : 'Event updated successfully')),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save event: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save event: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -270,8 +265,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                         fit: BoxFit.cover,
                       ),
                     )
-                  else if (_existingImageUrl != null &&
-                      _existingImageUrl!.isNotEmpty)
+                  else if (_existingImageUrl != null && _existingImageUrl!.isNotEmpty)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.network(
@@ -300,7 +294,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   TextField(
                     controller: _titleCtrl,
                     decoration: const InputDecoration(
@@ -309,7 +302,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   TextField(
                     controller: _descCtrl,
                     maxLines: 3,
@@ -319,7 +311,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   TextField(
                     controller: _locationCtrl,
                     decoration: const InputDecoration(
@@ -328,17 +319,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          _startsAt == null
-                              ? 'No date selected'
-                              : DateFormat.yMMMd()
-                                  .add_jm()
-                                  .format(_startsAt!),
-                        ),
+                        child: Text(_startsAt == null
+                            ? 'No date selected'
+                            : DateFormat.yMMMd().add_jm().format(_startsAt!)),
                       ),
                       ElevatedButton(
                         onPressed: _pickDateTime,
@@ -347,7 +333,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
