@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "987664653060",
+    "project_id": "fet-loginsign",
+    "storage_bucket": "fet-loginsign.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:987664653060:android:625ae88e5d07b955054e51",
+        "android_client_info": {
+          "package_name": "com.example.fet_event_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBoCDGF5ZLaRE31nXwv6j_-Ub03oHoDmBs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

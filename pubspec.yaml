@@ -1,0 +1,51 @@
+name: fet_event_app
+description: "A new Flutter project."
+
+# The following line prevents the package from being accidentally
+# published to pub.dev using flutter pub publish.
+# This is preferred for private packages.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Firebase (2025 stable compatible)
+  firebase_core: ^4.2.1
+  firebase_auth: ^6.1.2
+  cloud_firestore: ^6.1.0
+  firebase_storage: ^13.0.4
+
+
+  # State management
+  provider: ^6.1.5+1
+
+  # UI & Utilities
+  google_fonts: ^6.3.2
+  intl: ^0.18.0
+  image_picker: ^1.0.7
+  confetti: ^0.8.0
+  share_plus: ^12.0.1
+  path_provider: ^2.1.5
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/sunway_logo.png
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+
+  
