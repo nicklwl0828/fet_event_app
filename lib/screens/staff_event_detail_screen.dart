@@ -3,6 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:fet_event_app/util/download_csv.dart'; // relative path — adjust if different
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
+import 'dart:convert';
+import 'package:path_provider/path_provider.dart';
 
 class StaffEventDetailScreen extends StatelessWidget {
   final String eventId;
@@ -54,120 +58,95 @@ class StaffEventDetailScreen extends StatelessWidget {
 
   // Export RSVPs as CSV — on web triggers a download, otherwise shows selectable dialog.
   Future<void> _exportCsv(BuildContext context) async {
-    final navigator = Navigator.of(context);
+  final navigator = Navigator.of(context);
 
-    // show loading indicator while fetching
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
 
-    try {
-      // optional: fetch event title to use in filename
-      String eventTitle = eventId;
-      try {
-        final eventDoc = await FirebaseFirestore.instance.collection('events').doc(eventId).get();
-        if (eventDoc.exists) {
-          final evData = eventDoc.data() as Map<String, dynamic>?;
-          final t = (evData?['title'] ?? '').toString();
-          if (t.isNotEmpty) eventTitle = t.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-        }
-      } catch (_) {
-        // ignore — fallback to eventId
+  try {
+    String eventTitle = eventId;
+    final eventDoc = await FirebaseFirestore.instance
+        .collection('events')
+        .doc(eventId)
+        .get();
+    if (eventDoc.exists) {
+      final data = eventDoc.data() as Map<String, dynamic>?;
+      final t = (data?['title'] ?? '').toString();
+      if (t.isNotEmpty) {
+        eventTitle = t.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
       }
+    }
 
-      final regsSnap = await FirebaseFirestore.instance
-          .collection('registrations')
-          .where('event_id', isEqualTo: eventId)
-          .orderBy('timestamp', descending: false)
+    final regsSnap = await FirebaseFirestore.instance
+        .collection('registrations')
+        .where('event_id', isEqualTo: eventId)
+        .orderBy('timestamp')
+        .get();
+
+    final userIds = regsSnap.docs
+        .map((d) => d['user_id'])
+        .whereType<String>()
+        .toSet();
+
+    final userMap = <String, Map<String, dynamic>>{};
+    if (userIds.isNotEmpty) {
+      final usersSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .where(FieldPath.documentId, whereIn: userIds.toList())
           .get();
-
-      // Build CSV with a UTF-8 BOM so Excel recognizes UTF-8 when opened
-      final buffer = StringBuffer();
-      buffer.write('\uFEFF'); // BOM
-      buffer.writeln('Name,Email,User ID,Attended,Timestamp');
-
-      String esc(String? value) {
-        final v = (value ?? '').replaceAll('"', '""');
-        return '"$v"';
+      for (final d in usersSnap.docs) {
+        userMap[d.id] = d.data();
       }
+    }
 
-      for (var doc in regsSnap.docs) {
-        final reg = doc.data() as Map<String, dynamic>;
-        final userId = reg['user_id'] as String?;
-        final attended = reg['attended'] == true;
-        final ts = reg['timestamp'] as Timestamp?;
-        final tsStr =
-            ts != null ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate()) : '';
+    final buffer = StringBuffer();
+    buffer.writeln('Name,Email,User ID,Attended,Timestamp');
 
-        String name = '';
-        String email = '';
+    String esc(String? v) {
+      final s = (v ?? '').replaceAll('"', '""');
+      return '"$s"';
+    }
 
-        if (userId != null) {
-          final userSnap = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .get();
-          if (userSnap.exists) {
-            final udata = userSnap.data() as Map<String, dynamic>?;
-            name = (udata?['name'] ?? '').toString();
-            email = (udata?['email'] ?? '').toString();
-          }
-        }
+    for (final doc in regsSnap.docs) {
+      final reg = doc.data();
+      final uid = reg['user_id'] as String?;
+      final attended = reg['attended'] == true;
+      final ts = reg['timestamp'] as Timestamp?;
+      final tsStr =
+          ts != null ? DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate()) : '';
 
-        buffer.writeln(
-          '${esc(name)},${esc(email)},${esc(userId)},${attended ? "Yes" : "No"},${esc(tsStr)}',
-        );
-      }
+      final user = uid != null ? userMap[uid] : null;
+      final name = user?['name'] ?? '';
+      final email = user?['email'] ?? '';
 
-      // close loading
-      navigator.pop();
-
-      final csvString = buffer.toString();
-      final filename = '${eventTitle}_rsvps.csv';
-
-      if (kIsWeb) {
-        // web: trigger direct download (uses your conditional export helper)
-        await downloadCsvFile(filename, csvString);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('CSV download started')));
-      } else {
-        // non-web: show CSV in dialog as selectable text (fallback)
-        await showDialog(
-          context: context,
-          builder: (ctx) {
-            return AlertDialog(
-              title: const Text('RSVP CSV'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: SelectableText(
-                    csvString,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close'),
-                ),
-              ],
-            );
-          },
-        );
-      }
-    } catch (e) {
-      // close loading if still open
-      try {
-        navigator.pop();
-      } catch (_) {}
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export CSV: $e')),
+      buffer.writeln(
+        '${esc(name)},${esc(email)},${esc(uid)},${attended ? "Yes" : "No"},${esc(tsStr)}',
       );
     }
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/${eventTitle}_rsvps.csv');
+    await file.writeAsBytes(utf8.encode(buffer.toString()), flush: true);
+
+    navigator.pop();
+
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'RSVP list for $eventTitle',
+    );
+  } catch (e) {
+    try {
+      navigator.pop();
+    } catch (_) {}
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to export CSV: $e')),
+    );
   }
+}
+
 
   Future<void> _showFeedbackDialog(BuildContext context) async {
     showDialog(

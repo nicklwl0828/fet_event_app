@@ -45,7 +45,73 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _locationCtrl.dispose();
     super.dispose();
   }
+  Future<void> _deleteEvent() async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Delete Event'),
+      content: const Text(
+        'Are you sure you want to delete this event? This action cannot be undone.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
 
+  if (confirmed != true) return;
+
+  setState(() => _isLoading = true);
+
+  try {
+    final eventId = widget.eventId!;
+    final firestore = FirebaseFirestore.instance;
+
+    // 1️⃣ Delete event document
+    await firestore.collection('events').doc(eventId).delete();
+
+    // 2️⃣ OPTIONAL (recommended): delete all RSVPs for this event
+    final regs = await firestore
+        .collection('registrations')
+        .where('event_id', isEqualTo: eventId)
+        .get();
+
+    for (final doc in regs.docs) {
+      await doc.reference.delete();
+    }
+
+    // 3️⃣ OPTIONAL: delete event image from Storage
+    try {
+      await FirebaseStorage.instance
+          .ref('event_photos/$eventId.jpg')
+          .delete();
+    } catch (_) {
+      // ignore if image does not exist
+    }
+
+    if (!mounted) return;
+
+    Navigator.pop(context); // leave edit screen
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Event deleted successfully')),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to delete event: $e')),
+    );
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
+  }
+}
   Future<void> _loadExistingEvent() async {
     setState(() => _isLoading = true);
     try {
@@ -340,6 +406,21 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       child: Text(isEdit ? 'Update Event' : 'Create Event'),
                     ),
                   ),
+
+                  if (isEdit) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: _isLoading ? null : _deleteEvent,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                    child: const Text('Delete Event'),
+                  ),
+                ),
+              ]
                 ],
               ),
             ),

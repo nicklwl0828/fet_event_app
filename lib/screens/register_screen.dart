@@ -20,7 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? error;
 
   // Student pattern and staff whitelist
-  final RegExp _studentRegex = RegExp(r'^[0-9]{8}@sunway\.edu\.my$', caseSensitive: false);
+  final RegExp _studentRegex = RegExp(r'^[0-9]{8}@imail\.sunway\.edu\.my$', caseSensitive: false);
   final Set<String> _staffWhitelist = {
     'rosilaha@sunway.edu.my',
     'dennyng@sunway.edu.my',

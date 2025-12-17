@@ -41,34 +41,51 @@ class StudentDashboard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Greeting card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 18,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        "Welcome back 👋",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        "Explore upcoming FET events and manage your RSVPs.",
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              // Greeting card
+Card(
+  child: Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: 16,
+      vertical: 18,
+    ),
+    child: FutureBuilder(
+      future: auth.getUserProfile(),
+      builder: (context, snapshot) {
+        String name = 'there';
+
+        if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          final fetchedName = data?['name']?.toString().trim();
+          if (fetchedName != null && fetchedName.isNotEmpty) {
+            name = fetchedName;
+          }
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Welcome back, $name 👋',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
               ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Explore upcoming FET events and manage your RSVPs.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  ),
+),
+
 
               const SizedBox(height: 16),
 
